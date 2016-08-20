@@ -10,8 +10,10 @@ import shutil
 import re
 import hashlib
 import json
+import base64
 import logging
 logging.getLogger('scapy.runtime').setLevel(logging.ERROR)
+
 try:
     import scapy.all as scapy
 except ImportError:
@@ -30,9 +32,9 @@ response_datalist = []
 data_assist = []
 
 #输入需要解析的pcap文件路径
-pcapfile = 'netdata.pcap'
+pcapfile = 'multi.pcap'
 #定义需要存储全部结果的路径并进行检测，若目录存在则删除，不存在则创建
-all_path = pcapfile + 'result/'
+all_path = pcapfile + '_result/'
 
 if os.path.exists(all_path):
     shutil.rmtree(all_path)
@@ -45,8 +47,12 @@ request_txt_string = all_path + 'request.txt'
 #创建response.txt文件存储http中response原始报文
 response_txt_string = all_path + 'response.txt'
 
-log = all_path + 'logcat'
+log = all_path + 'netdata.log'
 log_file = open(log, 'wb')
+
+#存储http部分log信息
+http_log = all_path + 'http.log'
+http_log_file = open(http_log, 'wb')
 
 #将所有的http会话拆分为两部分，request和response，并分别存储在对应的txt文件中
 request_txt = open(request_txt_string, 'wb')
@@ -54,7 +60,8 @@ response_txt = open(response_txt_string, 'wb')
 
 #定义存储的目录名,http
 file_path = all_path + 'http/'
-content_path = all_path + 'http/http_content/'
+
+test = open('test.txt', 'wb')
 
 #文件存在则覆盖
 if os.path.exists(file_path):
@@ -62,12 +69,6 @@ if os.path.exists(file_path):
     os.makedirs(file_path)
 else:
     os.makedirs(file_path)
-
-if os.path.exists(content_path):
-    shutil.rmtree(content_path)
-    os.makedirs(content_path)
-else:
-    os.makedirs(content_path)
 
 '''
     定义全局变量
@@ -140,8 +141,8 @@ class httpconversation:
             elif self.serialnum not in response_serial_assist:
                 responsemax_flag = max(data_assist)[0:4]
                 #去除不规范的数据
-                if responsemax_flag == 'GET ' or responsemax_flag == 'POST':
-                    print 'already delete useless information'
+                if responsemax_flag == 'GET ' or responsemax_flag == 'POST' or responsemax_flag == 'HEAD' or responsemax_flag == 'OPTI' or responsemax_flag == 'DELE' or responsemax_flag == 'PUT ':
+                    pass
                 elif max(data_assist) != '\r\n':
                     response_txt.write(max(data_assist))
                 del(data_assist[0:len(data_assist)])
@@ -156,7 +157,7 @@ class httpconversation:
             elif self.serialnum not in request_serial_assist:
                 #与相应报文的判断相反
                 requestmax_flag = max(data_assist)[0:4]
-                if requestmax_flag == 'GET ' or requestmax_flag == 'POST':
+                if requestmax_flag == 'GET ' or requestmax_flag == 'POST' or requestmax_flag =='OPTI' or requestmax_flag == 'HEAD' or requestmax_flag == 'DELE' or requestmax_flag == 'PUT ':
                     request_txt.write(max(data_assist))
                 del(data_assist[0:len(data_assist)])
                 request_serial_assist.append(self.serialnum)
@@ -278,10 +279,6 @@ def  pcap_parse(pcapfile):
                 tcp['uid'] = 10097
                 tcp['timestamp'] = timestamp
                 tcp['typeid'] = 786433
-                tcp['class'] = 'null'
-                tcp['parameters'] = 'null'
-                tcp['return'] = 'null'
-                tcp['stackTrace'] = 'null'
                 tcp_num += 1
 
                 pcap_packet_tcp['sport'] = string_data[l:l+2]
@@ -327,9 +324,13 @@ def  pcap_parse(pcapfile):
                 pcap_packet_tcp['urgent_pointer'] = pcap_packet_tcp['urgent_pointer'][1:2] + pcap_packet_tcp['urgent_pointer'][0:1]
                 urgent_pointer = struct.unpack('H', pcap_packet_tcp['urgent_pointer'])[0]
                 tcp_data['urgent_pointer'] = urgent_pointer
-                tcp['data'] = tcp_data
-                tcp_str = json.dumps(repr(tcp))
-                log_file.write(tcp_str + '\r\n')
+                tcp_data_string = json.dumps(tcp_data)
+                tcp['data'] = tcp_data_string
+                try:
+                    tcp_str = json.dumps(tcp)
+                    log_file.write(tcp_str + '\r\n')
+                except Exception, ex:
+                    pass
 
                 if sport == 80:
                     conversation_port = dport
@@ -355,11 +356,6 @@ def  pcap_parse(pcapfile):
                 udp['uid'] = 10097
                 udp['timestamp'] = timestamp
                 udp['typeid'] = 851969
-                udp['class'] = 'null'
-                udp['method'] = 'null'
-                udp['parameters'] = 'null'
-                udp['return'] = 'null'
-                udp['stackTrace'] = 'null'
                 udp_num += 1
 
                 pcap_packet_udp['sport'] = string_data[l:l+2]
@@ -381,9 +377,13 @@ def  pcap_parse(pcapfile):
                 pcap_packet_udp['checksum'] = string_data[l+6:l+8]
                 udp_checksum = struct.unpack('H', pcap_packet_udp['checksum'])[0]
                 udp_data['checksum'] = udp_checksum
-                udp['data'] = udp_data
-                udp_str = json.dumps(repr(udp))
-                log_file.write(udp_str + '\r\n')
+                udp_data_str = json.dumps(udp_data)
+                udp['data'] = udp_data_str
+                try:
+                    udp_str = json.dumps(udp)
+                    log_file.write(udp_str + '\r\n')
+                except Exception, ex:
+                    pass
 
                 if sport == 53 or dport == 53:
                     pcap_packet_dns['tran'] = string_data[l+8:l+10]
@@ -423,11 +423,6 @@ def  pcap_parse(pcapfile):
                             dns_datas = {}
                             dns['uid'] = 10097
                             dns['typeid'] = 983041
-                            dns['class'] = 'null'
-                            dns['parameters'] = 'null'
-                            dns['stackTrace'] = 'null'
-                            dns['return'] = 'null'
-                            dns['timestamp'] = 'null'
                             #domainName部分
                             dns_domain = dns_data[0:zeros]
                             #对未压缩的域名情况进行解析
@@ -444,19 +439,18 @@ def  pcap_parse(pcapfile):
                             dns_class = struct.unpack('H',dns_data[zeros+4:zeros+5]+dns_data[zeros+3:zeros+4])[0]
                             dns_class_string = dns_class_write(dns_class)
                             dns_datas['class'] = dns_class_string
-                            dns['data'] = dns_datas
-                            dns_str = json.dumps(repr(dns))
-                            log_file.write(dns_str + '\r\n')
+                            dns_datas_str = json.dumps(dns_datas)
+                            dns['data'] = dns_datas_str
+                            try:
+                                dns_str = json.dumps(dns)
+                                log_file.write(dns_str + '\r\n')
+                            except Exception, ex:
+                                pass
                             #创建answers节点
                             dns = {}
                             dns_datas = {}
                             dns['uid'] = 10097
                             dns['typeid'] = 983042
-                            dns['class'] = 'null'
-                            dns['parameters'] = 'null'
-                            dns['stackTrace'] = 'null'
-                            dns['return'] = 'null'
-                            dns['timestamp'] = 'null'
                             #解析answers字段
                             domain_name_list = []
                             dns_answer_data = dns_data[zeros+5:]
@@ -472,11 +466,6 @@ def  pcap_parse(pcapfile):
                             dns_datas = {}
                             dns['uid'] = 10097
                             dns['typeid'] = 983041
-                            dns['class'] = 'null'
-                            dns['parameters'] = 'null'
-                            dns['stackTrace'] = 'null'
-                            dns['return'] = 'null'
-                            dns['timestamp'] = 'null'
                             dns_domain = dns_data[0:zeros]
                             #对域名未压缩的情况进行解析
                             try:
@@ -490,9 +479,13 @@ def  pcap_parse(pcapfile):
                             dns_class = struct.unpack('H',dns_data[zeros+4:zeros+5]+dns_data[zeros+3:zeros+4])[0]
                             dns_class_string = dns_class_write(dns_class)
                             dns_datas['class'] = dns_class_string
-                            dns['data'] = dns_datas
-                            dns_str = json.dumps(repr(dns))
-                            log_file.write(dns_str + '\r\n')
+                            dns_datas_str = json.dumps(dns_datas)
+                            dns['data'] = dns_datas_str
+                            try:
+                                dns_str = json.dumps(dns)
+                                log_file.write(dns_str + '\r\n')
+                            except Exception, ex:
+                                pass
 
         #下一段数据
         i = i + packet_len + 16
@@ -613,6 +606,19 @@ def dns_class_write(dns_class):
         dns_class_string = dns_class
     return dns_class_string
 
+def write_file(string):
+    if string[0:4] != 'HTTP':
+        m = hashlib.md5()
+        m.update(string)
+        file_name = m.hexdigest()
+        f = open(file_name, 'wb')
+        f.write(string)
+        f.close()
+        shutil.copy(file_name, file_path)
+        os.remove(file_name)
+    else:
+        pass
+
 #解析dns中answers部分字段
 def dns_answers_write(dns, dns_data, string, all_string, domain_name_list):
     global domain_name_combine
@@ -653,9 +659,13 @@ def dns_answers_write(dns, dns_data, string, all_string, domain_name_list):
         if answer_type == 1:
             address = str(struct.unpack('B',answer_string[12:13])[0]) + '.' + str(struct.unpack('B',answer_string[13:14])[0]) + '.' + str(struct.unpack('B',answer_string[14:15])[0]) + '.' + str(struct.unpack('B',answer_string[15:16])[0])
             dns_data['address'] = address
-            dns['data'] = dns_data
-            dns_str = json.dumps(repr(dns))
-            log_file.write(dns_str + '\r\n')
+            dns_data_str = json.dumps(dns_data)
+            dns['data'] = dns_data_str
+            try:
+                dns_str = json.dumps(dns)
+                log_file.write(dns_str + '\r\n')
+            except Exception, ex:
+                pass
         elif answer_type == 5:
             cname_string = string[12:12+data_length]
             cname_string_end = cname_string.find('\00')
@@ -677,9 +687,13 @@ def dns_answers_write(dns, dns_data, string, all_string, domain_name_list):
                 dns_data['cname'] = domain_name_combine
                 del domain_name_list[0:len(domain_name_list)]
                 domain_name_combine = ''
-            dns['data'] = dns_data
-            dns_str = json.dumps(repr(dns))
-            log_file.write(dns_str + '\r\n')
+            dns_data_str = json.dumps(dns_data)
+            dns['data'] = dns_data_str
+            try:
+                dns_str = json.dumps(dns)
+                log_file.write(dns_str + '\r\n')
+            except Exception, ex:
+                pass
         elif answer_type == 2:
             ns_string = string[12:12+data_length]
             ns_string_end = ns_string.find('\00')
@@ -697,11 +711,15 @@ def dns_answers_write(dns, dns_data, string, all_string, domain_name_list):
                 dns_data['name_server'] = domain_name_combine
                 del domain_name_list[0:len(domain_name_list)]
                 domain_name_combine = ''
-            dns['data'] = dns_data
-            dns_str = json.dumps(repr(dns))
-            log_file.write(dns_str + '\r\n')
+            dns_data_str = json.dumps(dns_data)
+            dns['data'] = dns_data_str
+            try:
+                dns_str = json.dumps(dns)
+                log_file.write(dns_str + '\r\n')
+            except:
+                pass
         else:
-            print 'There are other kinds of dns_answer packets...'
+            pass
 
 #解析域名压缩部分，遇到\c0就读取偏移量，并找到相应的位置进行解析，多次压缩的情况进行递归解压
 def combine_domain(offset, all_string, domain_name_list):
@@ -768,7 +786,7 @@ def printhttp_finaldata(lst):
     if len(data_assist) > 0:
         flag = max(data_assist)[0:4]
         #每个会话中的最后序列号的数据包
-        if flag == 'GET ' or flag == 'POST':
+        if flag == 'GET ' or flag == 'POST' or flag == 'HEAD' or flag == 'OPTI' or flag == 'PUT ' or flag == 'DELE':
             request_txt.write(max(data_assist))
             del(data_assist[0:len(data_assist)])
         elif max(data_assist) == '\00':
@@ -781,16 +799,21 @@ def printhttp_finaldata(lst):
 
 #取会话
 def get_data_request(string):
-    get_offset = string.find('GET')
-    post_offset = string.find('POST')
-    if get_offset > 0 and post_offset > 0:
-        offset_start = min(get_offset, post_offset)
-    elif get_offset > 0 and post_offset < 0:
-        offset_start = get_offset
-    elif get_offset < 0 and post_offset > 0:
-        offset_start = post_offset
-    else:
-        offset_start = 0
+    offset_list = []
+    min_list = []
+    offset_list.append(string.find('GET'))
+    offset_list.append(string.find('POST'))
+    offset_list.append(string.find('HEAD'))
+    offset_list.append(string.find('PUT'))
+    offset_list.append(string.find('DELETE'))
+    offset_list.append(string.find('OPTIONS'))
+    for i in range(len(offset_list)):
+        if offset_list[i] >= 0:
+            min_list.append(offset_list[i])
+    offset_start = min_list[0]
+    for i in range(len(min_list)):
+        if min_list[i] < offset_start:
+            offset_start = min_list[i]
     offset_end = string[offset_start:].find('=====')
     return_str = string[offset_start:(offset_start+offset_end)]
     if len(return_str) > 0:
@@ -833,7 +856,7 @@ def http_file_divide(pcapfile):
             #request以空行分割
             request_enter_offset = request_conversation_data.find('\r\n\r\n')
             if request_enter_offset > 0:
-                request_contentlength = request_conversation_data[0:request_enter_offset].find('Content-Length: ')
+                request_contentlength = request_conversation_data[0:request_enter_offset].upper().find('CONTENT-LENGTH: ')
                 if request_contentlength > 0:
                     request_contentlength_enter = request_conversation_data[request_contentlength:].find('\r\n')
                     request_content_length = request_conversation_data[request_contentlength+16:request_contentlength+request_contentlength_enter]
@@ -846,7 +869,7 @@ def http_file_divide(pcapfile):
                         request_conversation_data = request_conversation_data[request_enter_offset+4:]
                     else:
                         conversation_data.write(request_data)
-                        request_conversation_data = request_conversation_data[request_enter_offset+4+int(request_contentlength):]
+                        request_conversation_data = request_conversation_data[request_enter_offset+4+int(request_content_length):]
                 else:
                     request_data = request_conversation_data[0:request_enter_offset]
                     conversation_data.write(request_data)
@@ -856,12 +879,12 @@ def http_file_divide(pcapfile):
             else:
                 break
             #response处理
-            response_date = response_conversation_data.find('Date: ')
+            response_date = response_conversation_data.upper().find('DATE: ')
             #换行部分的偏移量
             blank_flag = response_conversation_data[response_date:].find('\r\n\r\n')
             #Content-Length: 的偏移量
-            response_contentlength = response_conversation_data[0:response_date+blank_flag].find('Content-Length: ')
-            response_transferencoding = response_conversation_data[0:response_date+blank_flag].find('Transfer-Encoding: chunked')
+            response_contentlength = response_conversation_data[0:response_date+blank_flag].upper().find('CONTENT-LENGTH: ')
+            response_transferencoding = response_conversation_data[0:response_date+blank_flag].upper().find('TRANSFER-ENCODING: CHUNKED')
             #对是否含有Content-Length进行不同的处理
             if response_contentlength > 0:
                 #回车的偏移量，从Content-length开始算起
@@ -887,14 +910,11 @@ def http_file_divide(pcapfile):
         response = response[response_conversation_offset+6:]
         #关闭某会话存储文件
         conversation_data.close()
-        create_http_xml(conversation_filename, content_path)
+        create_http_xml(conversation_filename)
         i += 1
         #将结果文件移动至result目录下
-        shutil.copy(conversation_filename,file_path)
         os.remove(conversation_filename)
 
-    shutil.copy(request_txt_string,file_path)
-    shutil.copy(response_txt_string,file_path)
     os.remove(request_txt_string)
     os.remove(response_txt_string)
     #文件写入结束
@@ -902,110 +922,94 @@ def http_file_divide(pcapfile):
     finaldata_response.close()
 
 #对每个会话中的数据进行处理生成xml文件
-def create_http_xml(filename, content_path):
+def create_http_xml(filename):
     http_file = open(filename,'rb')
     http_data_string = http_file.read()
-    print_xml_file(http_data_string, content_path)
+    print_xml_file(http_data_string)
     http_file.close()
 
+#解析head部分信息并存储为字典格式
+def head_parse(string, dict):
+    str_list = string.split('\r\n')
+    for i in str_list:
+        if i.find(':') > 0:
+            dict[i.split(':')[0]] = i.split(':')[1]
+        else:
+            pass
+    return dict
+
+def content_encode(dict, string):
+    front_string = string[0:4]
+    if front_string != 'GET ' and front_string != 'POST' and front_string != 'HEAD' and front_string != 'PUT ' and front_string != 'DELE' and front_string != 'OPTI' and front_string != 'HTTP':
+        encoded_string = base64.b64encode(string)
+        dict['content'] = encoded_string
+        return dict
+
 #分割request和response的文件并生成对应信息，存储在xml文件中
-def print_xml_file(string, content_path):
+def print_xml_file(string):
     global content_filename
     if len(string) > 0:
         http = {}
         http_data = {}
+        http_header = {}
         http['uid'] = 10097
         http['typeid'] = 917505
-        http['class'] = 'null'
-        http['parameters'] = 'null'
-        http['return'] = 'null'
-        http['stackTrace'] = 'null'
         #对request部分进行处理
-        #得到Method的值
         head_offset = string.find('\r\n\r\n')
         head = string[0:head_offset]
-        method_offset = head.find(' ')
-        method = head[0:method_offset]
-        http_data['method'] = method
-        #得到Method后的部分路径值
-        path_behind_offset = head[method_offset+1:].find(' ')
-        path_behind = head[method_offset+1:method_offset+1+path_behind_offset]
-        #得到Host的值
-        host_offset = head.find('Host:')
-        if host_offset < 0:
-            host_offset = head.find('host: ')
-        host_enter_offset = head[host_offset+6:].find('\r\n')
-        if host_enter_offset > 0:
-            host = head[host_offset+6:host_offset+6+host_enter_offset]
-        else:
-            host = head[host_offset+6:]
-        http_data['host'] = host
-        #得到Path的值
-        path = host + path_behind
-        http_data['path'] = path
-        http_data['port'] = 80
-        http_data['query'] = 'null'
-        http_data['scheme'] = 'null'
-        #得到Content-Type的值
-        head_content_type_offset = head.find('Content-Type: ')
-        if head_content_type_offset > 0:
-            head_content_type_offset_enter = head[head_content_type_offset:].find('\r\n')
-            if head_content_type_offset_enter > 0:
-                head_content_type = head[head_content_type_offset:head_content_type_offset+head_content_type_offset_enter]
-            else:
-                head_content_type_flag = re.compile('Content-Type: (.*)')
-                head_content_type = head_content_type_flag.findall(head)[0]
-        # print host,path
+        #对head中的第一行进行处理，输出方法名、版本、path
+        head_first_line_offset = head.find('\r\n')
+        head_first_line = head[0:head_first_line_offset]
+        http_header['method'] = head_first_line.split(' ')[0]
+        http_header['path'] = head_first_line.split(' ')[1]
+        http_header['version'] = head_first_line.split(' ')[2]
+        method = http_header['method']
+        #head除去第一行数据进行解析，按字典形式输出
+        head_other_string = head[head_first_line_offset+2:head_offset]
+        http_header = head_parse(head_other_string, http_header)
         #如果方法是Post的讨论
         if method == 'POST':
             #得到Content-Length的值
-            head_content_offset = head.find('Content-Length: ')
-            if head_content_offset > 0:
-                head_content_enter_offset = head[head_content_offset+16:].find('\r\n')
-                if head_content_enter_offset > 0:
-                    head_content_length = head[head_content_offset+16:head_content_offset+16+head_content_enter_offset]
-                else:
-                    head_content_flag = re.compile('Content-Length: (.\d*)')
-                    head_content_length = head_content_flag.findall(head)[0]
-                    head_content_length = int(head_content_length)
-            else:
-                head_content_offset = head.find('Content-length: ')
-                if head_content_offset > 0:
-                    head_content_enter_offset = head[head_content_offset+16:].find('\r\n')
-                    if head_content_enter_offset > 0:
-                        head_content_length = head[head_content_offset+16:head_content_offset+16+head_content_enter_offset]
-                    else:
-                        head_content_flag = re.compile('Content-length: (.\d*)')
-                        head_content_length = head_content_flag.findall(head)[0]
-                        head_content_length = int(head_content_length)
+            for key in http_header:
+                if key.upper() == 'CONTENT-LENGTH':
+                    head_content_length = int(http_header[key])
+                elif key.upper() == 'CONTENT-TYPE':
+                    content_type = http_header[key]
             head_content = string[head_offset+4:head_offset+4+int(head_content_length)]
             if head_content[0:4] != 'POST':
-                content_file = write_file(head_content, content_path)
-                head_content_path = content_path + content_file
-                http_data['content'] = head_content_path
                 boundary_offset = head.find('boundary=')
                 filename_offset = head_content.find('filename')
                 if boundary_offset > 0 and filename_offset > 0:
                     filename_flag = re.compile('filename="(.*)"')
                     filename = filename_flag.findall(head_content)[0]
-                    if len(filename) > 0:
-                        http_data['file_name'] = filename
-                        http_data['file_type'] = filename.split('.')[-1]
-                        if filename.split('.')[-1] == 'apk' or filename.split('.')[-1] == 'elf':
-                            http_data['isAPK_orELF'] = 'true'
-                http['data'] = http_data
-                http_request_str = json.dumps(repr(http))
-                log_file.write(http_request_str + '\r\n')
+                    boundary_enter_offset = head[boundary_offset:].find('\r\n')
+                    boundary = head[boundary_offset+9:boundary_offset+boundary_enter_offset]
+                    file_content = head_content[filename_offset+head_content[filename_offset:].find('\r\n\r\n')+4: filename_offset+head_content[filename_offset:].find(boundary)-2]
+                    f = open(filename, 'wb')
+                    f.write(file_content)
+                    f.close()
+                    shutil.copy(filename, file_path)
+                    os.remove(filename)
+                write_file(head_content)
+                http_header_str = json.dumps(http_header)
+                http_data['head'] = http_header_str
+                http_data = content_encode(http_data, head_content)
+                http_data_str = json.dumps(http_data)
+                http['data'] = http_data_str
+                try:
+                    if http['data'] != "null":
+                        http_request_str = json.dumps(http, ensure_ascii=False)
+                        http_log_file.write(http_request_str + '\r\n')
+                    else:
+                        pass
+                except Exception, ex:
+                    pass
                 #处理response部分
                 http = {}
                 http_data = {}
+                http_header = {}
                 http['uid'] = 10097
                 http['typeid'] = 917506
-                http['class'] = 'null'
-                http['timestamp'] = 'null'
-                http['parameters'] = 'null'
-                http['return'] = 'null'
-                http['stackTrace'] = 'null'
                 response_head_offset = string[head_offset+4+int(head_content_length):].find('\r\n\r\n')
                 response_head = string[head_offset+4+int(head_content_length):head_offset+4+int(head_content_length)+response_head_offset]
                 #得到status_line的值
@@ -1015,136 +1019,123 @@ def print_xml_file(string, content_path):
                     http_offset = status_line.find('HTTP')
                     if http_offset >= 0:
                         status_line = status_line[http_offset:]
-                        http_data['status_line'] = status_line
-                content_type_offset = response_head.find('Content-Type: ')
-                if content_type_offset > 0:
-                    content_type_offset_enter = response_head[content_type_offset:].find('\r\n')
-                    if content_type_offset_enter > 0:
-                        content_type = response_head[content_type_offset:content_type_offset+content_type_offset_enter]
-                    else:
-                        content_type_flag = re.compile('Content-Type: (.*)')
-                        content_type = content_type_flag.findall(response_head)[0]
-                Content_Length_offset = response_head.find('Content-Length: ')
-                Transfer_Encoding_offset = response_head.find('Transfer-Encoding: chunked')
-                if Content_Length_offset > 0:
-                    content_length_enter = response_head[Content_Length_offset+16:].find('\r\n')
-                    if content_length_enter > 0:
-                        response_content_length = response_head[Content_Length_offset+16:Content_Length_offset+16+content_length_enter]
-                    else:
-                        response_content_length_flag = re.compile('Content-Length: (.\d*)')
-                        response_content_length = response_content_length_flag.findall(response_head)[0]
-                        response_content_length = int(response_content_length)
-                    content = string[head_offset+4+int(head_content_length)+response_head_offset+4:head_offset+4+int(head_content_length)+response_head_offset+4+int(response_content_length)]
-                    request_length_content_file = write_file(content, content_path)
-                    request_length_content_path = content_path + request_length_content_file
-                    http_data['content'] = request_length_content_path
-                    http['data'] = http_data
-                    http_str = json.dumps(repr(http))
-                    log_file.write(http_str + '\r\n')
-                    string = string[head_offset+4+int(head_content_length)+response_head_offset+4+int(response_content_length):]
-                    print_xml_file(string, content_path)
-                elif Transfer_Encoding_offset > 0:
-                    content_chunked_offset = string[head_offset+4+int(head_content_length)+response_head_offset+4:].find('\r\n\r\n')
-                    content_chunked = string[head_offset+4+int(head_content_length)+response_head_offset+4:head_offset+4+int(head_content_length)+response_head_offset+4+content_chunked_offset]
-                    request_chunck_content_file = write_file(content_chunked, content_path)
-                    request_chunck_content_path = content_path + request_chunck_content_file
-                    http_data['content'] = request_chunck_content_path
-                    http['data'] = http_data
-                    http_str = json.dumps(repr(http))
-                    log_file.write(http_str + '\r\n')
-                    string = string[head_offset+4+int(head_content_length)+response_head_offset+4+content_chunked_offset+4:]
-                    print_xml_file(string, content_path)
-            else:
-                boundary_offset = head.find('boundary=')
-                filename_offset = head_content.find('filename')
-                if boundary_offset > 0 and filename_offset > 0:
-                    filename_flag = re.compile('filename="(.*)"')
-                    filename = filename_flag.findall(head_content)[0]
-                    if len(filename) > 0:
-                        http_data['file_name'] = filename
-                        http_data['file_type'] = filename.split('.')[-1]
-                        if filename.split('.')[-1] == 'apk' or filename.splt('.')[-1] == 'elf':
-                            http_data['isAPK_orELF'] = 'true'
-                        http['data'] = http_data
-                        http_str = json.dumps(repr(http))
-                        log_file.write(http_str + '\r\n')
-                else:
-                    http['data'] = http_data
-                    http_str = json.dumps(repr(http))
-                    log_file.write(http_str + '\r\n')
+                        http_header['status_line'] = status_line
+                response_other_string = response_head[status_enter_offset+2:]
+                http_header = head_parse(response_other_string, http_header)
+                for key in http_header:
+                    if key.upper() == 'CONTENT-TYPE':
+                        content_type = http_header[key]
+                for key in http_header:
+                    if key.upper() == 'CONTENT-LENGTH':
+                        response_content_length = int(http_header[key])
+                        content = string[head_offset+4+int(head_content_length)+response_head_offset+4:head_offset+4+int(head_content_length)+response_head_offset+4+int(response_content_length)]
+                        write_file(content)
+                        http_header_str = json.dumps(http_header)
+                        http_data['head'] = http_header_str
+                        http_data = content_encode(http_data, content)
+                        http_data_str = json.dumps(http_data)
+                        http['data'] = http_data_str
+                        try:
+                            if http['data'] != "null":
+                                http_str = json.dumps(http, ensure_ascii=False)
+                                http_log_file.write(http_str + '\r\n')
+                            else:
+                                pass
+                        except Exception, ex:
+                            pass
+                        string = string[head_offset+4+int(head_content_length)+response_head_offset+4+int(response_content_length):]
+                        print_xml_file(string)
+                    elif key.upper() == 'TRANSFER-ENCODING':
+                        content_chunked_offset = string[head_offset+4+int(head_content_length)+response_head_offset+4:].find('\r\n\r\n')
+                        content_chunked = string[head_offset+4+int(head_content_length)+response_head_offset+4:head_offset+4+int(head_content_length)+response_head_offset+4+content_chunked_offset]
+                        write_file(content_chunked)
+                        http_header_str = json.dumps(http_header)
+                        http_data['head'] = http_header_str
+                        http_data = content_encode(http_data, content_chunked)
+                        http_data_str = json.dups(http_data)
+                        http['data'] = http_data_str
+                        try:
+                            if http['data'] != "null":
+                                http_str = json.dumps(http, ensure_ascii=False)
+                                http_log_file.write(http_str + '\r\n')
+                            else:
+                                pass
+                        except Exception, ex:
+                            pass
+                        string = string[head_offset+4+int(head_content_length)+response_head_offset+4+content_chunked_offset+4:]
+                        print_xml_file(string)
         else:
-            http['data'] = http_data
-            http_request_str = json.dumps(repr(http))
-            log_file.write(http_request_str + '\r\n')
+            http_header_str = json.dumps(http_header)
+            http_data['head'] = http_header_str
+            http_data_str = json.dumps(http_data)
+            http['data'] = http_data_str
+            try:
+                if http['data'] != "null":
+                    http_request_str = json.dumps(http, ensure_ascii=False)
+                    http_log_file.write(http_request_str + '\r\n')
+                else:
+                    pass
+            except Exception, ex:
+                pass
             http = {}
             http_data = {}
+            http_header = {}
             http['uid'] = 10097
             http['typeid'] = 917506
-            http['class'] = 'null'
-            http['timestamp'] = 'null'
-            http['parameters'] = 'null'
-            http['return'] = 'null'
-            http['stackTrace'] = 'null'
             response_head_offset = string[head_offset+4:].find('\r\n\r\n')
             response_head = string[head_offset+4:head_offset+4+response_head_offset]
             #得到status_line的值
             status_enter_offset = response_head.find('\r\n')
             status_line = response_head[0:status_enter_offset]
             if len(status_line) > 0:
-                http_offset = status_line.find('HTTP')
-                if http_offset >= 0:
-                    status_line = status_line[http_offset:]
-                    http_data['status_line'] = status_line
-            response_content_type_offset = response_head.find('Content-Type: ')
-            if response_content_type_offset > 0:
-                response_content_type_offset_enter = response_head[response_content_type_offset:].find('\r\n')
-                if response_content_type_offset_enter > 0:
-                    response_content_type = response_head[response_content_type_offset:response_content_type_offset+response_content_type_offset_enter]
-                else:
-                    response_content_type_flag = re.compile('Content-Type: (.\d*)')
-                    response_content_type = response_content_type_flag.findall(response_head)[0]
-            Content_Length_offset = response_head.find('Content-Length: ')
-            Transfer_Encoding_offset = response_head.find('Transfer-Encoding: chunked')
-            if Content_Length_offset > 0:
-                content_length_enter = response_head[Content_Length_offset+16:].find('\r\n')
-                if content_length_enter > 0:
-                    response_content_length = response_head[Content_Length_offset+16:Content_Length_offset+16+content_length_enter]
-                else:
-                    content_length_flag = re.compile('Content-Length: (.\d*)')
-                    response_content_length = content_length_flag.findall(response_head)[0]
-                    response_content_length = int(response_content_length)
-                content = string[head_offset+4+response_head_offset+4:head_offset+4+response_head_offset+4+int(response_content_length)]
-                response_length_content_file = write_file(content, content_path)
-                response_length_content_path = content_path + response_length_content_file
-                http_data['content'] = response_length_content_path
-                http['data'] = http_data
-                http_str = json.dumps(repr(http))
-                log_file.write(http_str + '\r\n')
-                string = string[head_offset+4+response_head_offset+4+int(response_content_length):]
-                print_xml_file(string, content_path)
-            elif Transfer_Encoding_offset > 0:
-                content_chunked_offset = string[head_offset+4+response_head_offset+4:].find('\r\n\r\n')
-                content_chunked = string[head_offset+4+response_head_offset+4:head_offset+4+response_head_offset+4+content_chunked_offset]
-                response_chunck_content_file = write_file(content_chunked, content_path)
-                response_chunck_content_path = content_path + response_chunck_content_file
-                http_data['content'] = response_chunck_content_path
-                http['data'] = http_data
-                http_str = json.dumps(repr(http))
-                log_file.write(http_str + '\r\n')
-                string = string[head_offset+4+response_head_offset+4+content_chunked_offset+4:]
-                print_xml_file(string, content_path)
-
-def write_file(string, content_path):
-    m = hashlib.md5()
-    m.update(string)
-    file_name = m.hexdigest()
-    content_filename = file_name
-    f = open(content_filename, 'wb')
-    f.write(string)
-    f.close()
-    shutil.copy(content_filename, content_path)
-    os.remove(content_filename)
-    return file_name
+                http_header['status_line'] = status_line
+            #response头部的其他字段
+            response_other_string = response_head[status_enter_offset+2:]
+            http_header = head_parse(response_other_string, http_header)
+            #获取content-type
+            for key in http_header:
+                if key.upper() == 'CONTENT-TYPE':
+                    response_content_type = http_header[key]
+            #分别对固定数据长度数据传输和chunck传输分类处理，输出content
+            for key in http_header:
+                if key.upper() == 'CONTENT-LENGTH':
+                    response_content_length = http_header[key]
+                    content = string[head_offset+4+response_head_offset+4:head_offset+4+response_head_offset+4+int(response_content_length)]
+                    write_file(content)
+                    http_header_str = json.dumps(http_header)
+                    http_data['head'] = http_header_str
+                    http_data = content_encode(http_data, content)
+                    http_data_str = json.dumps(http_data)
+                    http['data'] = http_data_str
+                    try:
+                        if http['data'] != "null":
+                            http_str = json.dumps(http, ensure_ascii=False)
+                            http_log_file.write(http_str + '\r\n')
+                        else:
+                            pass
+                    except Exception, ex:
+                        pass
+                    string = string[head_offset+4+response_head_offset+4+int(response_content_length):]
+                    print_xml_file(string)
+                elif key.upper() == 'TRANSFER-ENCODING':
+                    content_chunked_offset = string[head_offset+4+response_head_offset+4:].find('\r\n\r\n')
+                    content_chunked = string[head_offset+4+response_head_offset+4:head_offset+4+response_head_offset+4+content_chunked_offset]
+                    write_file(content_chunked)
+                    http_header_str = json.dumps(http_header)
+                    http_data['head'] = http_header_str
+                    http_data = content_encode(http_data, content_chunked)
+                    http_data_str = json.dumps(http_data)
+                    http['data'] = http_data_str
+                    try:
+                        if http['data'] != "null":
+                            http_str = json.dumps(http, ensure_ascii=False)
+                            http_log_file.write(http_str + '\r\n')
+                        else:
+                            pass
+                    except Exception, ex:
+                        pass
+                    string = string[head_offset+4+response_head_offset+4+content_chunked_offset+4:]
+                    print_xml_file(string)
 
 def main():
     pcap_parse(pcapfile)
@@ -1154,3 +1145,4 @@ def main():
 if __name__ == '__main__':
     main()
     log_file.close()
+    http_log_file.close()
